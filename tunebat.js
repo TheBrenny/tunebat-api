@@ -1,5 +1,6 @@
 const nid = require("node-id3");
 const simi = require("string-similarity");
+const path = require("path");
 
 const TuneBatVersion = 1;
 const TunebatScoreThreshold = 0.8;
@@ -13,7 +14,7 @@ async function search(query) {
     let r = (await fetch(url));
     let t = await r.text();
     try {
-        return JSON.parse(t).data.items;
+        return JSON.parse(t.normalize("NFD").replace(/’/g,"'")).data.items;
     } catch(e) {
         // console.log(r.headers);
         // console.log(t);
@@ -43,30 +44,40 @@ async function shouldBeTunebatted(file) {
     return true;
 }
 
-async function tunebat(file) {
+async function tunebat(file, match = null) {
     let tags = await getID3Tags(file);
-    tags.artist = tags.artist?.split(",")[0] ?? "";
-    let query = `${tags.artist} ${tags.title}`;
-    let results = await search(query);
-
-    // Find the best match. If the title is empty, then there's no way of knowing for sure, and manual labour is required.
     let bestMatch = {el: null, score: 0};
-    if((tags.title ?? "") !== "") {
-        // loop through results and find the best match
-        // the best match is defined as the title being exactly equal and the artists array from res containing the artist in the ID3 tags
-        bestMatch = results.reduce((best, curr) => {
-            if(tags.artist === "" || curr.as.find((a) => a.toLowerCase() === tags.artist.toLowerCase())) {
-                let score = simi.compareTwoStrings(curr.n, tags.title);
-                if(score > best.score) {
-                    return {el: curr, score: score};
-                }
-            }
-            return best;
-        }, bestMatch);
-    }
+    let results;
 
-    /*
-    Tunebat response:
+    if(match === null) {
+        if(tags.artist && tags.title) tags.artist = tags.artist?.split(",")[0] ?? "";
+        else {
+            let parts = path.basename(file, ".mp3").split(" - ");
+            if(parts.length !== 2) throw new TuneBatError(`Couldn't collect artist and title from filename. Make sure it's "Artist - Title". Found "${parts.join(" - ")}"`, file, null, null, null);
+            tags.artist = parts[0];
+            tags.title = parts[1];
+        }
+
+        let query = `${tags.artist} ${tags.title}`;
+        results = await search(query);
+
+        // Find the best match. If the title is empty, then there's no way of knowing for sure, and manual labour is required.
+        if((tags.title ?? "") !== "") {
+            // loop through results and find the best match
+            // the best match is defined as the title being exactly equal and the artists array from res containing the artist in the ID3 tags
+            bestMatch = results.reduce((best, curr) => {
+                if(tags.artist === "" || curr.as.find((a) => a.toLowerCase() === tags.artist.toLowerCase())) {
+                    let score = simi.compareTwoStrings(curr.n, tags.title);
+                    if(score > best.score) {
+                        return {el: curr, score: score};
+                    }
+                }
+                return best;
+            }, bestMatch);
+        }
+    };
+
+    /* Tunebat response:
     {
         id: "Spotify ID"
         n: "Track Title"
@@ -97,8 +108,9 @@ async function tunebat(file) {
         er: [---]
     }
     */
-    if(bestMatch.el !== null && bestMatch.score >= TunebatScoreThreshold) {
-        bestMatch = bestMatch.el;
+    if(match !== null || (bestMatch.el !== null && bestMatch.score >= TunebatScoreThreshold)) {
+        bestMatch = match !== null ? match : bestMatch.el;
+
         // TODO: Add "Cover" tags
         tags = {
             ...tags,
@@ -119,15 +131,19 @@ async function tunebat(file) {
                 {description: "Speechiness", value: `${bestMatch.s}`}
             ]
         };
-        if(await updateID3Tags(file, tags)) {
-            return true;
-        } else {
-            throw new TuneBatError("Something bad happened?", file, tags.title, tags.artist, bestMatch.score);
-
-        }
+        if(await updateID3Tags(file, tags)) return true;
+        else throw new TuneBatError("Something bad happened?", file, tags.title, tags.artist, bestMatch.score);
     } else {
-        // throw a tunebat error with the message as smth like "couldn't find a good match"
-        throw new TuneBatError(`Couldn't find a good match`, file, tags.title, tags.artist, bestMatch.score);
+        // // throw a tunebat error with the message as smth like "couldn't find a good match"
+        // throw new TuneBatError(`Couldn't find a good match`, file, tags.title, tags.artist, bestMatch.score);
+
+        return {
+            file,
+            artist: tags.artist,
+            title: tags.title,
+            results,
+            bestMatch
+        };
     }
 }
 

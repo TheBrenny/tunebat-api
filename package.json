@@ -39,6 +39,7 @@
   "dependencies": {
     "node-id3": "^0.2.3",
     "p-limit": "^4.0.0",
+    "readline-sync": "^1.4.10",
     "string-similarity": "^4.0.4"
   }
 }

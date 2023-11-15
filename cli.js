@@ -6,9 +6,10 @@ const path = require('path');
 const fsp = require('fs').promises;
 const tunebat = require("./tunebat");
 const pLimit = import('p-limit');
+const rl = require("readline-sync");
 
 const songFormats = [".mp3"];
-const maxConcurrentQueries = 1;
+const maxConcurrentQueries = 3;
 
 async function getFiles(dir) {
     const children = await fsp.readdir(dir, {withFileTypes: true});
@@ -31,16 +32,16 @@ async function getFiles(dir) {
 
         let fileCount = 0;
         let badOnes = [];
+        let almostGood = [];
         process.stdout.write(`Files processed: ${fileCount}/${files.length}.`);
         const limit = (await pLimit).default(maxConcurrentQueries);
         const promises = files.map((file) => limit(async () => {
             try {
-                await tunebat.tunebat(file)
+                let tbResult = await tunebat.tunebat(file);
+                if(tbResult !== true) almostGood.push(tbResult);
             } catch(e) {
                 if(e.constructor !== tunebat.TuneBatError) {
-                    if(e.constructor === SyntaxError) {
-                        console.log(`\n\n${e.message}\n\n`)
-                    }
+                    if(e.constructor === SyntaxError) console.log(`\n\n${e.message}\n\n`);
                     throw e;
                 }
                 badOnes.push(e);
@@ -54,9 +55,27 @@ async function getFiles(dir) {
         await Promise.all(promises);
         console.log();
 
+        for(let attempt of almostGood) {
+            let titles = attempt.results.map((a) => `${a.as} - ${a.n}` + (a === attempt.bestMatch.el ? ` (best match: ${attempt.bestMatch.score})` : "")).slice(0,35);
+            let selection = rl.keyInSelect(titles, "Select matching title? ");
+            if(selection >= 0 && selection < titles.length) {
+                try {
+                    await tunebat.tunebat(attempt.file, attempt.results[selection]);
+                } catch(e) {
+                    if(e.constructor !== tunebat.TuneBatError) {
+                        if(e.constructor === SyntaxError) console.log(`\n\n${e.message}\n\n`);
+                        throw e;
+                    }
+                    badOnes.push(e);
+                }
+            } else {
+                badOnes.push(new tunebat.TuneBatError("Couldn't select a match.", attempt.file, attempt.title, attempt.artist, attempt.bestMatch.score))
+            }
+        }
+
         if(badOnes.length > 0) {
             console.error(`\n${badOnes.length} files were not updated:`);
-            badOnes.forEach((err) => console.error(`  - ${err.title} - ${err.artist} (${err.file}) (${err.score})`));
+            badOnes.forEach((err) => console.error(`  -> ${err.artist} - ${err.title} (${err.file}) (${err.score})`));
         }
         console.log(`Processed ${fileCount - badOnes.length}/${files.length} files.`);
     } else {
