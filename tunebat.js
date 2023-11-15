@@ -7,6 +7,8 @@ const TunebatScoreThreshold = 0.8;
 const base = "https://api.tunebat.com/api/tracks/search";
 const param = "term";
 
+let throttleProm = null;
+
 // Testing indicates that you can execute 15 rapid queries before being told to wait a minute.
 async function search(query) {
     query = encodeURI(query);
@@ -19,8 +21,22 @@ async function search(query) {
         // console.log(r.headers);
         // console.log(t);
         if(r.headers.get("retry-after") !== null) {
-            return await new Promise((resolve) => setTimeout(resolve, (parseInt(r.headers.get("retry-after")) + 5) * 1000))
-                .then(() => search(query));
+            let count = parseInt(r.headers.get("retry-after")) + 5;
+            if(throttleProm === null) {
+                throttleProm = new Promise(
+                    (resolve) => {
+                        setTimeout(resolve, count * 1000)
+                        let interval;
+                        interval = setInterval(() => {
+                            process.stdout.write(`\x1b[1B\x1b[2K\x1b[0GThrottled. Waiting ${count--} seconds...\x1b[1A`)
+                            if(count === 0) clearInterval(interval);
+                        }, 990);
+                    })
+                    .then(() => process.stdout.write(`\x1b[1B\x1b[2K\x1b[1A`))
+                    .then(() => search(query));
+                throttleProm.then(() => throttleProm = null);
+            }
+            return await throttleProm;;
         }
         throw e;
     }
