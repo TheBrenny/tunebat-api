@@ -14,7 +14,7 @@ async function search(query) {
     let r = (await fetch(url));
     let t = await r.text();
     try {
-        return JSON.parse(t.normalize("NFD").replace(/’/g,"'")).data.items;
+        return JSON.parse(t.normalize("NFD").replace(/’/g, "'")).data.items;
     } catch(e) {
         // console.log(r.headers);
         // console.log(t);
@@ -49,14 +49,15 @@ async function tunebat(file, match = null) {
     let bestMatch = {el: null, score: 0};
     let results;
 
+    if(!tags.artist || !tags.title) {
+        let parts = path.basename(file, ".mp3").split(" - ");
+        if(parts.length !== 2) throw new TuneBatError(`Couldn't collect artist and title from filename. Make sure it's "Artist - Title". Found "${parts.join(" - ")}"`, file, null, null, null);
+        tags.artist = parts[0];
+        tags.title = parts[1];
+    }
+
     if(match === null) {
-        if(tags.artist && tags.title) tags.artist = tags.artist?.split(",")[0] ?? "";
-        else {
-            let parts = path.basename(file, ".mp3").split(" - ");
-            if(parts.length !== 2) throw new TuneBatError(`Couldn't collect artist and title from filename. Make sure it's "Artist - Title". Found "${parts.join(" - ")}"`, file, null, null, null);
-            tags.artist = parts[0];
-            tags.title = parts[1];
-        }
+        if(tags.artist) tags.artist = tags.artist?.split(",")[0] ?? "";
 
         let query = `${tags.artist} ${tags.title}`;
         results = await search(query);
@@ -75,7 +76,7 @@ async function tunebat(file, match = null) {
                 return best;
             }, bestMatch);
         }
-    };
+    }
 
     /* Tunebat response:
     {
