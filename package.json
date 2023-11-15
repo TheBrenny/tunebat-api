@@ -1,0 +1,44 @@
+{
+  "name": "tunebat-api",
+  "version": "0.0.1",
+  "private": "true",
+  "description": "A simple wrapper for the very basic search functionality of the TuneBat API.",
+  "main": "tunebat.js",
+  "scripts": {
+    "start": "node tunebat.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": {
+    "tunebat": "./cli.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TheBrenny/tunebat-api.git"
+  },
+  "keywords": [
+    "tunebat",
+    "dj",
+    "api",
+    "rest",
+    "disc",
+    "jockey",
+    "tune",
+    "bat",
+    "music",
+    "tracks",
+    "songs",
+    "key",
+    "tempo"
+  ],
+  "author": "TheBrenny <iam@justbrenny.me>",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "bugs": {
+    "url": "https://github.com/TheBrenny/tunebat-api/issues"
+  },
+  "homepage": "https://github.com/TheBrenny/tunebat-api#readme",
+  "dependencies": {
+    "node-id3": "^0.2.3",
+    "p-limit": "^4.0.0",
+    "string-similarity": "^4.0.4"
+  }
+}
