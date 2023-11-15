@@ -16,7 +16,7 @@ async function search(query) {
     let r = (await fetch(url));
     let t = await r.text();
     try {
-        return JSON.parse(t.normalize("NFD").replace(/’/g, "'")).data.items;
+        return JSON.parse(t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/’/g, "'")).data.items;
     } catch(e) {
         // console.log(r.headers);
         // console.log(t);
@@ -32,11 +32,10 @@ async function search(query) {
                             if(count === 0) clearInterval(interval);
                         }, 990);
                     })
-                    .then(() => process.stdout.write(`\x1b[1B\x1b[2K\x1b[1A`))
-                    .then(() => search(query));
+                    .then(() => process.stdout.write(`\x1b[1B\x1b[2K\x1b[1A`));
                 throttleProm.then(() => throttleProm = null);
             }
-            return await throttleProm;;
+            return await throttleProm.then(() => search(query));
         }
         throw e;
     }
