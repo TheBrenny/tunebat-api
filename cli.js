@@ -11,21 +11,28 @@ const rl = require("readline-sync");
 const songFormats = [".mp3"];
 const maxConcurrentQueries = 3;
 
-async function getFiles(dir) {
+async function getFiles(dir, recurse) {
     const children = await fsp.readdir(dir, {withFileTypes: true});
     const files = await Promise.all(children.map((child) => {
         const res = path.resolve(dir, child.name);
-        return child.isDirectory() ? getFiles(res) : res;
+        return child.isDirectory() ? (recurse ? getFiles(res) : null) : res;
     }));
-    return Array.prototype.concat(...files);
+    return Array.prototype.concat(...files.filter((f) => f !== null));
 }
 
+let args = [...process.argv.slice(2)];
+
+try {
 (async () => {
-    if(process.argv.length > 2) {
+    if(args.length > 0) {
+        let options = collectOptions(args);
+
+        if(args.length === 0) errorWithHelp();
+
         // Show output in the terminal
         console.log("Searching for files...");
-        let folder = path.normalize(process.argv[2]);
-        let files = (await getFiles(folder)).filter((p) => songFormats.includes(path.extname(p))); // filter out non-songs
+        let folder = path.normalize(args[0]);
+        let files = (await getFiles(folder, options.recurse)).filter((p) => songFormats.includes(path.extname(p))); // filter out non-songs
         files = (await Promise.all(files.map(async p => await tunebat.shouldBeTunebatted(p) ? p : null))).filter(p => p !== null); // filter out files that have already been tunebatted
         // the above line sucks :(
         console.log(`Found ${files.length} files.`);
@@ -34,7 +41,7 @@ async function getFiles(dir) {
         let badOnes = [];
         let almostGood = [];
         process.stdout.write(`Files processed: ${fileCount}/${files.length}.`);
-        const limit = (await pLimit).default(maxConcurrentQueries);
+        const limit = (await pLimit).default(options.concurrent);
         const promises = files.map((file) => limit(async () => {
             try {
                 let tbResult = await tunebat.tunebat(file);
@@ -50,13 +57,14 @@ async function getFiles(dir) {
             // Increment count after because of changes to tens and hundreds of number
             let leftShift = `${fileCount}/${files.length}.`.length;
             fileCount++;
-            process.stdout.write(`\x1b[${leftShift}D${fileCount}/${files.length}.`);
+            process.stdout.write(`\x1b[0GFiles processed: ${fileCount}/${files.length}.`);
         }));
         await Promise.all(promises);
         console.log();
 
         for(let attempt of almostGood) {
-            let titles = attempt.results.map((a) => `${a.as} - ${a.n}` + (a === attempt.bestMatch.el ? ` (best match: ${attempt.bestMatch.score})` : "")).slice(0,35);
+            console.log(`Title didn't match for "${attempt.artist} - ${attempt.title}". Please select the nearest match:`);
+            let titles = attempt.results.map((a) => `${a.as} - ${a.n}` + (a === attempt.bestMatch.el ? ` (best match: ${attempt.bestMatch.score})` : "")).slice(0, 35);
             let selection = rl.keyInSelect(titles, "Select matching title? ");
             if(selection >= 0 && selection < titles.length) {
                 try {
@@ -78,8 +86,38 @@ async function getFiles(dir) {
             badOnes.forEach((err) => console.error(`  -> ${err.artist} - ${err.title} (${err.file}) (${err.score})`));
         }
         console.log(`Processed ${fileCount - badOnes.length}/${files.length} files.`);
-    } else {
-        console.error("tunebat <folder>")
-        process.exit(1);
-    }
+    } else printHelp();
 })();
+} catch(e) {
+    console.error(e);
+    errorWithHelp();
+}
+
+function collectOptions(args) {
+    let recurse = args.findIndex((e) => e === "-r" || e === "--recurse");
+    if(recurse >= 0) {
+        args.splice(recurse, 1);
+        recurse = true;
+    } else recurse = false;
+
+    let concurrent = args.findIndex((e) => e === "-c" || e === "--concurrent");
+    if(concurrent >= 0) {
+        let tmp = args[concurrent + 1];
+        args.splice(concurrent, 2);
+        concurrent = parseInt(tmp);
+    } else concurrent = maxConcurrentQueries;
+
+    return {
+        recurse,
+        concurrent
+    }
+}
+
+function errorWithHelp() {
+    printHelp();
+    process.exit(1);
+}
+
+function printHelp() {
+    console.error("tunebat [-r|--recurse] <folder>")
+}
